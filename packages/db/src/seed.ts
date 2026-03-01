@@ -7,10 +7,12 @@
  *
  * 使い方:
  *   DB_PATH=../../data/demo.db npx tsx src/seed.ts
+ *   DB_PATH=../../data/demo.db npx tsx src/seed.ts --period=2026-03  # 2026-03まで生成
  */
 
 import { unlinkSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseArgs } from "node:util";
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
@@ -31,8 +33,8 @@ await migrate(db, { migrationsFolder: join(import.meta.dirname, "../drizzle") })
 // ---------------------------------------------------------------------------
 // ヘルパー
 // ---------------------------------------------------------------------------
-// 冪等性のため固定日時を使用
-const FIXED_TIMESTAMP = "2026-02-24T00:00:00.000Z";
+// 冪等性のため固定日時を使用（YEAR_END/MONTH_END から導出、ヘルパー関数より後で定義）
+let FIXED_TIMESTAMP: string;
 const now = () => FIXED_TIMESTAMP;
 let mfIdCounter = 0;
 const mfId = () => `demo_${String(++mfIdCounter).padStart(6, "0")}`;
@@ -79,11 +81,23 @@ function daysInMonth(y: number, m: number): number {
 // ---------------------------------------------------------------------------
 const YEAR_START = 2025;
 const MONTH_START = 2; // 2025-02
+const FIXED_DAY = 24; // 月内の固定日
 
-// 冪等性のため固定日付を使用
-const today = new Date("2026-02-24");
-const YEAR_END = today.getFullYear();
-const MONTH_END = today.getMonth() + 1; // getMonth() は 0-indexed
+// --period=YYYY-MM 引数で終了月を指定可能 (例: --period=2026-03)
+const { values: args } = parseArgs({
+  args: process.argv.slice(2).filter((a) => a !== "--"),
+  options: { period: { type: "string" } },
+  strict: false,
+});
+const period = typeof args.period === "string" ? args.period : undefined;
+if (period && !/^\d{4}-\d{2}$/.test(period)) {
+  console.error("--period must be in YYYY-MM format (e.g., --period=2026-03)");
+  process.exit(1);
+}
+const YEAR_END = period ? Number(period.split("-")[0]) : 2026;
+const MONTH_END = period ? Number(period.split("-")[1]) : 2;
+const today = new Date(dateStr(YEAR_END, MONTH_END, FIXED_DAY));
+FIXED_TIMESTAMP = `${dateStr(YEAR_END, MONTH_END, FIXED_DAY)}T00:00:00.000Z`;
 
 console.log(
   `期間: ${YEAR_START}-${String(MONTH_START).padStart(2, "0")} 〜 ${YEAR_END}-${String(MONTH_END).padStart(2, "0")}`,
@@ -2030,7 +2044,7 @@ if (existsSync(insightsPath)) {
       .insert(schema.analyticsReports)
       .values({
         groupId,
-        date: "2026-02-24",
+        date: dateStr(YEAR_END, MONTH_END, FIXED_DAY),
         summary: data.summary,
         savingsInsight: data.savingsInsight,
         investmentInsight: data.investmentInsight,
