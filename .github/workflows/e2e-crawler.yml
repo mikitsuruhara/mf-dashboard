@@ -18,9 +18,9 @@ jobs:
     steps:
       - id: check
         env:
-          OP_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          MF_EMAIL: ${{ secrets.MF_EMAIL }}
           SHOULD_RUN: ${{ vars.SHOULD_RUN_CRAWLER_E2E }}
-        run: echo "should-run=${{ env.OP_TOKEN != '' && env.SHOULD_RUN == 'true' }}" >> "$GITHUB_OUTPUT"
+        run: echo "should-run=${{ env.MF_EMAIL != '' && env.SHOULD_RUN == 'true' }}" >> "$GITHUB_OUTPUT"
   e2e:
     needs: check
     if: needs.check.outputs.should-run == 'true'
@@ -35,10 +35,10 @@ jobs:
       - name: Run e2e tests
         run: pnpm --filter @mf-dashboard/crawler test:e2e
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OP_VAULT: ${{ secrets.OP_VAULT }}
-          OP_ITEM: ${{ secrets.OP_ITEM }}
-          OP_TOTP_FIELD: ${{ secrets.OP_TOTP_FIELD }}
+          MF_EMAIL: ${{ secrets.MF_EMAIL }}
+          MF_PASSWORD: ${{ secrets.MF_PASSWORD }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       - uses: ./.github/actions/auth-state-cache
         if: always()
         with:
@@ -76,11 +76,11 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           payload=$(jq -n --arg run_url "$RUN_URL" --arg avatar_url "${DISCORD_AVATAR_URL:-}" '
-            if ($avatar_url | length) > 0 then
-              {content: "🔴 Crawler E2E テストが失敗しました\n\($run_url)", avatar_url: $avatar_url}
-            else
-              {content: "🔴 Crawler E2E テストが失敗しました\n\($run_url)"}
-            end
+          if ($avatar_url | length) > 0 then
+            {content: "🔴 Crawler E2E テストが失敗しました\n\($run_url)", avatar_url: $avatar_url}
+          else
+            {content: "🔴 Crawler E2E テストが失敗しました\n\($run_url)"}
+          end
           ')
 
           curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
