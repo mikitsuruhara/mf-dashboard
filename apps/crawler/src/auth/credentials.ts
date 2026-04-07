@@ -25,9 +25,7 @@ export async function getCredentials(): Promise<{
   const password = process.env.MF_PASSWORD;
 
   if (!email || !password) {
-    throw new Error(
-      "MF_EMAIL and MF_PASSWORD environment variables are required"
-    );
+    throw new Error("MF_EMAIL and MF_PASSWORD environment variables are required");
   }
 
   return { email, password };
@@ -46,9 +44,7 @@ export async function getOTP(): Promise<string> {
   const pass = process.env.GMAIL_APP_PASSWORD;
 
   if (!user || !pass) {
-    throw new Error(
-      "GMAIL_USER and GMAIL_APP_PASSWORD environment variables are required"
-    );
+    throw new Error("GMAIL_USER and GMAIL_APP_PASSWORD environment variables are required");
   }
 
   const deadline = Date.now() + POLL_TIMEOUT_MS;
@@ -62,7 +58,7 @@ export async function getOTP(): Promise<string> {
   throw new Error(
     `OTP not received within ${POLL_TIMEOUT_MS / 1000} seconds. ` +
       "Check that GMAIL_USER and GMAIL_APP_PASSWORD are correct, " +
-      "and that the MoneyForward OTP email is being delivered to that inbox."
+      "and that the MoneyForward OTP email is being delivered to that inbox.",
   );
 }
 
@@ -70,10 +66,7 @@ export async function getOTP(): Promise<string> {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-async function fetchOTPFromGmail(
-  user: string,
-  pass: string
-): Promise<string | null> {
+async function fetchOTPFromGmail(user: string, pass: string): Promise<string | null> {
   const client = new ImapFlow({
     host: "imap.gmail.com",
     port: 993,
@@ -90,10 +83,7 @@ async function fetchOTPFromGmail(
       const since = new Date(Date.now() - OTP_WINDOW_MS);
 
       // Search for recent emails from MoneyForward
-      const uids = await client.search(
-        { since, from: "moneyforward.com" },
-        { uid: true }
-      );
+      const uids = await client.search({ since, from: "moneyforward.com" }, { uid: true });
 
       if (!uids || uids.length === 0) return null;
 
@@ -101,11 +91,7 @@ async function fetchOTPFromGmail(
       const latestUid = String(uids[uids.length - 1]);
       let bodyText = "";
 
-      for await (const msg of client.fetch(
-        latestUid,
-        { source: true },
-        { uid: true }
-      )) {
+      for await (const msg of client.fetch(latestUid, { source: true }, { uid: true })) {
         bodyText = msg.source?.toString("utf8") ?? "";
       }
 
@@ -135,5 +121,3 @@ function sleep(ms: number): Promise<void> {
 export function _resetOpClient(): void {
   // no-op — no singleton to reset
 }
-
-replace 1Password auth with Gmail IMAP
