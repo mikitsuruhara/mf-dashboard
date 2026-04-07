@@ -21,7 +21,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@1password/sdk": "0.4.0",
+            "imapflow": "^1.0.0",
     "@mf-dashboard/analytics": "workspace:*",
     "@mf-dashboard/db": "workspace:*",
     "@mf-dashboard/meta": "workspace:*",
