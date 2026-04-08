@@ -16,6 +16,9 @@ export async function getAssetHistory(page: Page): Promise<AssetHistory> {
     await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 30000 });
   } catch {
     debug("table.table-bordered not found on /bs/history");
+    await page
+      .screenshot({ path: "/tmp/mf-debug/asset-history.png", fullPage: true })
+      .catch(() => {});
     return { points: [] };
   }
 

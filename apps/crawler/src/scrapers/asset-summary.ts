@@ -18,6 +18,9 @@ export async function getAssetSummary(page: Page): Promise<AssetSummary> {
       .waitFor({ state: "visible", timeout: 30000 });
   } catch {
     debug(".heading-radius-box / .total-assets not found on home page");
+    await page
+      .screenshot({ path: "/tmp/mf-debug/asset-summary.png", fullPage: true })
+      .catch(() => {});
   }
 
   // Get total assets - try multiple selectors

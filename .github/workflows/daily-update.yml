@@ -40,6 +40,7 @@ jobs:
           mode: restore
           enabled: ${{ vars.CACHE_AUTH_STATE }}
       - run: pnpm --filter @mf-dashboard/crawler exec playwright install --with-deps chromium
+      - run: mkdir -p /tmp/mf-debug
       - run: pnpm --filter @mf-dashboard/crawler start
         env:
           MF_EMAIL: ${{ secrets.MF_EMAIL }}
@@ -56,6 +57,13 @@ jobs:
         with:
           mode: save
           enabled: ${{ vars.CACHE_AUTH_STATE }}
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots
+          path: /tmp/mf-debug/
+          if-no-files-found: ignore
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

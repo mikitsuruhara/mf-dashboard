@@ -14,6 +14,7 @@ export async function getCashFlow(page: Page): Promise<CashFlowSummary> {
     await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 30000 });
   } catch {
     debug("#cf-detail-table not found on /cf");
+    await page.screenshot({ path: "/tmp/mf-debug/cash-flow.png", fullPage: true }).catch(() => {});
     return { month: "", totalIncome: 0, totalExpense: 0, balance: 0, items: [] };
   }
 

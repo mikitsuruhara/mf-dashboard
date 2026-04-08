@@ -263,6 +263,9 @@ export async function scrapeCashFlowHistory(
     await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 30000 });
   } catch {
     debug("#cf-detail-table not found on /cf");
+    await page
+      .screenshot({ path: "/tmp/mf-debug/cash-flow-history.png", fullPage: true })
+      .catch(() => {});
     return [];
   }
 

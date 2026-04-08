@@ -16,6 +16,9 @@ export async function getSpendingTargets(page: Page): Promise<SpendingTargetsDat
     await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 30000 });
   } catch {
     debug("table.table-bordered not found on /spending_targets/edit");
+    await page
+      .screenshot({ path: "/tmp/mf-debug/spending-targets.png", fullPage: true })
+      .catch(() => {});
     return { categories: [] };
   }
 
