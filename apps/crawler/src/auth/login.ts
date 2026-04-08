@@ -109,9 +109,17 @@ export async function login(page: Page): Promise<void> {
     const otp = await getOTP(baselineUid);
     info("OTP obtained, submitting...");
 
+    // Screenshot the OTP page so we can verify the form structure in CI
+    await page
+      .screenshot({ path: "/tmp/mf-debug/email-otp-page.png", fullPage: true })
+      .catch(() => {});
+
     const otpInput = page.locator(SELECTORS.otpInput).first();
     await otpInput.waitFor({ state: "visible", timeout: TIMEOUTS.short });
-    await otpInput.fill(otp);
+    // Click to focus, then type character-by-character to trigger input events
+    await otpInput.click();
+    await otpInput.pressSequentially(otp, { delay: 50 });
+    info(`OTP input value after fill: ${await otpInput.inputValue().catch(() => "?")}`);
     await page.locator(SELECTORS.mfidSubmit).click();
 
     // Wait until we leave the OTP page.
