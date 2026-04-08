@@ -39,6 +39,7 @@ jobs:
         with:
           mode: restore
           enabled: ${{ vars.CACHE_AUTH_STATE }}
+      - run: pnpm --filter @mf-dashboard/crawler exec playwright install --with-deps chromium
       - run: pnpm --filter @mf-dashboard/crawler start
         env:
           MF_EMAIL: ${{ secrets.MF_EMAIL }}
