@@ -160,13 +160,19 @@ export async function login(page: Page): Promise<void> {
     if (page.url().includes("account_selector")) {
       // MFID account selector: shown during OAuth when the browser has
       // multiple MFID sessions. Click the row for the account we logged in with.
+      // The row element type varies (div, li, button, a) — use broad selector.
       info("MFID account selector, selecting account...");
-      const accountLink = page.locator("a", { hasText: username }).first();
-      if (await accountLink.isVisible().catch(() => false)) {
-        await accountLink.click();
+      const accountItem = page
+        .locator("a, button, li, [role='button'], [role='listitem'], [role='link']")
+        .filter({ hasText: username })
+        .first();
+      if (await accountItem.isVisible().catch(() => false)) {
+        await accountItem.click({ timeout: TIMEOUTS.medium });
       } else {
-        // Fallback: click first link that looks like an email address
-        await page.locator("a").filter({ hasText: "@" }).first().click();
+        // Log HTML for diagnosis then fail loudly
+        const html = (await page.content().catch(() => "?")).slice(0, 3000);
+        info(`account_selector HTML: ${html}`);
+        throw new Error(`Could not find account row for ${username} on account_selector page`);
       }
       info("Account selected, waiting for OAuth redirect...");
     } else {
