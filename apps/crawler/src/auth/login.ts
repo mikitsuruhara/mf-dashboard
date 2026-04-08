@@ -1,6 +1,6 @@
 import { mfUrls } from "@mf-dashboard/meta/urls";
 import type { BrowserContext, Page } from "playwright";
-import { log, debug } from "../logger.js";
+import { log, debug, info, warn } from "../logger.js";
 import { getCredentials, getOTP } from "./credentials.js";
 import { hasAuthState, saveAuthState } from "./state.js";
 
@@ -112,17 +112,17 @@ async function isSessionValid(page: Page): Promise<boolean> {
 export async function loginWithAuthState(page: Page, context: BrowserContext): Promise<void> {
   // If auth state exists, check if session is valid
   if (hasAuthState()) {
-    debug("Auth state found, checking session validity...");
+    info("Auth state found, checking session validity...");
 
     const valid = await isSessionValid(page);
     if (valid) {
-      debug("Using existing session from auth state");
+      info("Using existing session from auth state");
       return;
     }
 
-    debug("Session expired, performing full login...");
+    info("Session expired, performing full login...");
   } else {
-    debug("No auth state found, performing full login...");
+    info("No auth state found, performing full login...");
   }
 
   // Perform full login
@@ -135,31 +135,28 @@ export async function loginWithAuthState(page: Page, context: BrowserContext): P
 export async function login(page: Page): Promise<void> {
   const { email: username, password } = await getCredentials();
 
-  debug("Navigating to login page...");
+  info("Navigating to MFID login page...");
   await page.goto(mfUrls.auth.signIn, {
     waitUntil: "domcontentloaded",
   });
+  info(`Login page loaded: ${page.url()}`);
 
   // Enter email
-  debug("Entering email...");
   const emailInput = page.locator(SELECTORS.mfidEmail);
   await emailInput.waitFor({ state: "visible", timeout: TIMEOUTS.medium });
   await emailInput.fill(username);
-
-  // Click sign in button
-  debug("Clicking Sign in button...");
   await page.locator(SELECTORS.mfidSubmit).click();
 
   // Wait for password field
-  debug("Waiting for password page...");
+  info("Waiting for password page...");
   const passwordInput = page.locator(SELECTORS.mfidPassword);
   await passwordInput.waitFor({ state: "visible", timeout: TIMEOUTS.medium });
+  info(`Password page loaded: ${page.url()}`);
 
   // Enter password
-  debug("Entering password...");
   await passwordInput.fill(password);
-  debug("Clicking Sign in button...");
   await page.locator(SELECTORS.mfidSubmit).click();
+  info("Password submitted, waiting for next step...");
 
   // Check if OTP is required
   await maybeHandleOtp(page, {
@@ -169,13 +166,14 @@ export async function login(page: Page): Promise<void> {
   });
 
   // Wait for redirect after login
-  debug("Waiting for login to complete...");
+  info(`Post-login URL: ${page.url()}`);
   await page.waitForURL(/https:\/\/(id\.)?moneyforward\.com\/.*/, {
     timeout: TIMEOUTS.login,
   });
+  info(`After waitForURL: ${page.url()}`);
 
   // Navigate to Money Forward ME - will redirect to MFID for auth
-  debug("Navigating to Money Forward ME...");
+  info("Navigating to ME sign_in...");
   // Don't wait for full load, just start navigation
   await page.goto(mfUrls.signIn);
 
@@ -184,34 +182,29 @@ export async function login(page: Page): Promise<void> {
 
   // If we're still on the ME domain, we might be logged in or need more time
   let currentUrl = page.url();
-  debug("URL after initial wait:", currentUrl);
+  info(`URL after signIn navigation: ${currentUrl}`);
   if (currentUrl.startsWith(mfUrls.signIn)) {
     // Wait for redirect to MFID
-    debug("Waiting for MFID redirect...");
+    info("Still on signIn, waiting for MFID redirect...");
     await page.waitForURL(/id\.moneyforward\.com/, {
       timeout: TIMEOUTS.long,
     });
     currentUrl = page.url();
+    info(`After MFID redirect: ${currentUrl}`);
   }
-
-  debug("Current URL:", currentUrl);
 
   // Check if already on ME home (session is valid)
   if (isLoggedInUrl(currentUrl)) {
-    debug("Already logged in to ME!");
+    info("Already logged in to ME!");
     return;
   }
 
   // Check if we're on account selector or password page
   if (currentUrl.includes("account_selector")) {
     // Click account button (contains email address)
-    debug("Account selector found, clicking account...");
-    // Try multiple selectors: email address, or Japanese/English text
+    info("Account selector found, clicking account...");
     const accountButton = page.locator(buildAccountSelector(username)).first();
     await accountButton.waitFor({ state: "visible", timeout: TIMEOUTS.short });
-
-    // Click and wait for navigation (either to password page or directly to ME)
-    debug("Clicking account and waiting for navigation...");
     await accountButton.click();
 
     // Wait for either password page or direct redirect to ME
@@ -219,29 +212,27 @@ export async function login(page: Page): Promise<void> {
       timeout: TIMEOUTS.long,
     });
     currentUrl = page.url();
+    info(`After account selector: ${currentUrl}`);
   }
 
   // Check if we need to enter password or already redirected to ME
   if (currentUrl.includes(mfUrls.auth.password)) {
     // Wait for password page
-    debug("Waiting for ME password page...");
+    info("ME password page...");
     const mePasswordInput = page.locator(SELECTORS.mePassword).first();
     await mePasswordInput.waitFor({ state: "visible", timeout: TIMEOUTS.medium });
 
     // Enter password
-    debug("Entering ME password...");
     await mePasswordInput.fill(password);
-
-    // Click Sign in button
-    debug("Clicking Sign in button...");
     await page.locator(SELECTORS.meSignIn).click();
 
     // Wait for redirect to ME
-    debug("Waiting for ME redirect...");
+    info("Waiting for ME redirect after password...");
     await page.waitForURL(`${mfUrls.home}**`, { timeout: TIMEOUTS.login });
+    info(`Landed on: ${page.url()}`);
   } else {
-    debug("Already redirected to ME (session exists)");
+    warn(`Unexpected URL at end of login: ${currentUrl}`);
   }
 
-  log("Login successful!");
+  info("Login complete!");
 }
