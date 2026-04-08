@@ -155,28 +155,29 @@ export async function login(page: Page): Promise<void> {
   info(`After goto sign_in: ${page.url()}`);
 
   if (page.url().includes("id.moneyforward.com")) {
-    // Capture whatever page we landed on for diagnosis
     await page.screenshot({ path: "/tmp/mf-debug/oauth-page.png", fullPage: true }).catch(() => {});
 
-    // Doorkeeper OAuth consent page has a submit button with name="commit".
-    // This appears on fresh sessions where the user hasn't previously
-    // authorized the MoneyForward OAuth client.
-    const consentBtn = page
-      .locator(
-        [
-          'input[name="commit"]',
-          'button[name="commit"]',
-          'form[action*="authorize"] input[type="submit"]',
-          'form[action*="authorize"] button[type="submit"]',
-        ].join(", "),
-      )
-      .first();
-    const hasConsent = await consentBtn.isVisible().catch(() => false);
-    if (hasConsent) {
-      info("OAuth consent page detected, clicking authorize...");
-      await consentBtn.click();
+    if (page.url().includes("account_selector")) {
+      // MFID account selector: shown during OAuth when the browser has
+      // multiple MFID sessions. Click the row for the account we logged in with.
+      info("MFID account selector, selecting account...");
+      const accountLink = page.locator("a", { hasText: username }).first();
+      if (await accountLink.isVisible().catch(() => false)) {
+        await accountLink.click();
+      } else {
+        // Fallback: click first link that looks like an email address
+        await page.locator("a").filter({ hasText: "@" }).first().click();
+      }
+      info("Account selected, waiting for OAuth redirect...");
     } else {
-      info("No consent button visible, assuming auto-grant redirect...");
+      // Doorkeeper OAuth consent page: submit button with name="commit"
+      const consentBtn = page.locator('[name="commit"]').first();
+      if (await consentBtn.isVisible().catch(() => false)) {
+        info("OAuth consent button found, clicking authorize...");
+        await consentBtn.click();
+      } else {
+        info("No account selector or consent button, assuming auto-grant...");
+      }
     }
 
     try {
