@@ -12,7 +12,7 @@
  */
 
 import { ImapFlow } from "imapflow";
-import PostalMime from "postal-mime";
+import { simpleParser } from "mailparser";
 
 // ---------------------------------------------------------------------------
 // Credentials
@@ -150,7 +150,7 @@ async function fetchOTPFromGmail(
 
       if (!rawSource) return null;
 
-      const parsed = await new PostalMime().parse(rawSource);
+      const parsed = await simpleParser(rawSource);
       // Prefer plain text; fall back to subject line (some OTP emails are text-only)
       const bodyText = parsed.text ?? parsed.subject ?? "";
 
@@ -179,6 +179,6 @@ function sleep(ms: number): Promise<void> {
 // Test compatibility shim (mirrors the original 1Password version)
 // ---------------------------------------------------------------------------
 
-export function _resetOpClient(): void {
+function _resetOpClient(): void {
   // no-op — no singleton to reset
 }
