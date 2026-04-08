@@ -147,20 +147,49 @@ export async function login(page: Page): Promise<void> {
   }
 
   // ── Step 5: ME OAuth exchange ─────────────────────────────────────────────
-  // MFID session is now established. Navigating to ME sign_in triggers an
-  // OAuth request to MFID. Because we're logged in, MFID auto-grants and
-  // redirects to moneyforward.com/auth/mfid/callback → dashboard.
+  // MFID session is established. Navigating to ME sign_in triggers an OAuth
+  // request to MFID. On fresh sessions (no stored consent), MFID shows an
+  // explicit consent page at /oauth/authorize that must be approved.
   info("Triggering ME OAuth exchange...");
   await page.goto(mfUrls.signIn, { waitUntil: "domcontentloaded" });
   info(`After goto sign_in: ${page.url()}`);
 
-  // Occasionally goto resolves mid-redirect on the MFID OAuth grant page.
-  // Wait for it to complete the redirect back to ME.
   if (page.url().includes("id.moneyforward.com")) {
-    info("MFID OAuth auto-grant in progress, waiting for redirect to ME...");
-    await page.waitForURL((url) => !url.toString().includes("id.moneyforward.com"), {
-      timeout: TIMEOUTS.login,
-    });
+    // Capture whatever page we landed on for diagnosis
+    await page.screenshot({ path: "/tmp/mf-debug/oauth-page.png", fullPage: true }).catch(() => {});
+
+    // Doorkeeper OAuth consent page has a submit button with name="commit".
+    // This appears on fresh sessions where the user hasn't previously
+    // authorized the MoneyForward OAuth client.
+    const consentBtn = page
+      .locator(
+        [
+          'input[name="commit"]',
+          'button[name="commit"]',
+          'form[action*="authorize"] input[type="submit"]',
+          'form[action*="authorize"] button[type="submit"]',
+        ].join(", "),
+      )
+      .first();
+    const hasConsent = await consentBtn.isVisible().catch(() => false);
+    if (hasConsent) {
+      info("OAuth consent page detected, clicking authorize...");
+      await consentBtn.click();
+    } else {
+      info("No consent button visible, assuming auto-grant redirect...");
+    }
+
+    try {
+      await page.waitForURL((url) => !url.toString().includes("id.moneyforward.com"), {
+        timeout: TIMEOUTS.login,
+      });
+    } catch (e) {
+      await page
+        .screenshot({ path: "/tmp/mf-debug/oauth-stuck.png", fullPage: true })
+        .catch(() => {});
+      info(`OAuth stuck — URL: ${page.url()}`);
+      throw e;
+    }
     info(`After OAuth grant: ${page.url()}`);
   }
 
