@@ -124,9 +124,25 @@ export async function login(page: Page): Promise<void> {
 
     // Wait until we leave the OTP page.
     // If the OTP is wrong, MF stays on /email_otp and this throws after 30s.
-    await page.waitForURL((url) => !url.toString().includes("email_otp"), {
-      timeout: TIMEOUTS.login,
-    });
+    try {
+      await page.waitForURL((url) => !url.toString().includes("email_otp"), {
+        timeout: TIMEOUTS.login,
+      });
+    } catch (e) {
+      // OTP was rejected — capture page state for CI diagnosis before rethrowing
+      await page
+        .screenshot({ path: "/tmp/mf-debug/email-otp-rejected.png", fullPage: true })
+        .catch(() => {});
+      const errorText = await page
+        .locator(".error-message, .alert, [class*='error'], [class*='alert']")
+        .first()
+        .textContent()
+        .catch(() => null);
+      info(
+        `OTP rejected — page: ${page.url()} — error: ${errorText ?? "(no error element found)"}`,
+      );
+      throw e;
+    }
     info(`After OTP: ${page.url()}`);
   }
 
