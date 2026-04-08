@@ -80,8 +80,8 @@ async function isSessionValid(page: Page): Promise<boolean> {
   debug("Checking if session is valid...");
 
   try {
-    // Navigate to Money Forward home
-    await page.goto(mfUrls.home, {
+    // Navigate to a protected page to verify session (home LP is accessible without auth)
+    await page.goto(mfUrls.cashFlow, {
       waitUntil: "domcontentloaded",
       timeout: TIMEOUTS.long,
     });
