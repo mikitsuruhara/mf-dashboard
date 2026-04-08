@@ -43,35 +43,6 @@ async function waitForUrlChange(page: Page, timeout: number = TIMEOUTS.redirect)
   }
 }
 
-async function maybeHandleOtp(
-  page: Page,
-  {
-    inputSelector,
-    submitSelector,
-    label,
-    timeout = TIMEOUTS.short,
-  }: {
-    inputSelector: string;
-    submitSelector: string;
-    label: string;
-    timeout?: number;
-  },
-): Promise<void> {
-  try {
-    debug(`Checking for ${label} OTP...`);
-    const otpInput = page.locator(inputSelector).first();
-    await otpInput.waitFor({ state: "visible", timeout });
-
-    debug(`${label} OTP required, getting from 1Password...`);
-    const otp = await getOTP();
-    await otpInput.fill(otp);
-    debug("Clicking verify button...");
-    await page.locator(submitSelector).first().click();
-  } catch {
-    debug(`${label} OTP not required`);
-  }
-}
-
 /**
  * Check if the current session is valid by navigating to Money Forward
  * and checking if we're redirected to login page
@@ -156,21 +127,43 @@ export async function login(page: Page): Promise<void> {
   // Enter password
   await passwordInput.fill(password);
   await page.locator(SELECTORS.mfidSubmit).click();
-  info("Password submitted, waiting for next step...");
 
-  // Check if OTP is required
-  await maybeHandleOtp(page, {
-    inputSelector: SELECTORS.mfidOtpInput,
-    submitSelector: SELECTORS.mfidOtpSubmit,
-    label: "MFID",
-  });
+  // Wait for page transition after password submit
+  await page.waitForLoadState("domcontentloaded");
+  const afterPasswordUrl = page.url();
+  info(`After password submit: ${afterPasswordUrl}`);
 
-  // Wait for redirect after login
-  info(`Post-login URL: ${page.url()}`);
+  // Handle email OTP if required (URL contains /email_otp or /otp)
+  if (afterPasswordUrl.includes("otp")) {
+    info("Email OTP required, fetching from Gmail...");
+    const otp = await getOTP();
+    info("OTP obtained, submitting...");
+    // Try broad set of selectors for the OTP input field
+    const otpInput = page
+      .locator(
+        [
+          'input[autocomplete="one-time-code"]',
+          "input[name*='otp']",
+          "input[name*='code']",
+          "input[name*='token']",
+          'input[type="text"][maxlength="6"]',
+          'input[type="number"][maxlength="6"]',
+          'input[inputmode="numeric"]',
+        ].join(", "),
+      )
+      .first();
+    await otpInput.waitFor({ state: "visible", timeout: TIMEOUTS.short });
+    await otpInput.fill(otp);
+    await page.locator(SELECTORS.mfidOtpSubmit).first().click();
+    await page.waitForLoadState("domcontentloaded");
+    info(`After OTP submit: ${page.url()}`);
+  }
+
+  // Wait for MFID auth to settle
   await page.waitForURL(/https:\/\/(id\.)?moneyforward\.com\/.*/, {
     timeout: TIMEOUTS.login,
   });
-  info(`After waitForURL: ${page.url()}`);
+  info(`Settled on: ${page.url()}`);
 
   // Navigate to Money Forward ME - will redirect to MFID for auth
   info("Navigating to ME sign_in...");
