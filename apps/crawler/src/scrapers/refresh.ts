@@ -46,7 +46,16 @@ export async function clickRefreshButton(page: Page): Promise<RefreshResult> {
   await page.waitForLoadState("networkidle");
 
   const refreshButton = page.locator('a:has-text("更新")').first();
-  await refreshButton.click();
+
+  // Wait for the button to appear — the page may still be rendering JS
+  try {
+    await refreshButton.waitFor({ state: "visible", timeout: 10000 });
+  } catch {
+    warn("Refresh button not found on home page — skipping account refresh");
+    return { completed: false, incompleteAccounts: [] };
+  }
+
+  await refreshButton.click({ timeout: 10000 });
 
   info("Refreshing accounts...");
 
