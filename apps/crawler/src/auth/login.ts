@@ -1,25 +1,28 @@
 import { mfUrls } from "@mf-dashboard/meta/urls";
 import type { BrowserContext, Page } from "playwright";
-import { log, debug, info, warn } from "../logger.js";
-import { getCredentials, getOTP } from "./credentials.js";
+import { debug, info, log } from "../logger.js";
+import { getBaselineEmailUid, getCredentials, getOTP } from "./credentials.js";
 import { hasAuthState, saveAuthState } from "./state.js";
 
 const TIMEOUTS = {
-  redirect: 2000,
-  short: 5000,
-  medium: 10000,
-  long: 15000,
-  login: 30000,
+  short: 5_000,
+  medium: 10_000,
+  long: 15_000,
+  login: 30_000,
 };
 
 const SELECTORS = {
   mfidEmail: 'input[name="mfid_user[email]"]',
   mfidPassword: 'input[name="mfid_user[password]"]',
   mfidSubmit: "#submitto",
-  mfidOtpInput: 'input[autocomplete="one-time-code"], input[name*="otp"], input[name*="code"]',
-  mfidOtpSubmit: '#submitto, button:text-is("認証する"), button:text-is("Verify")',
-  mePassword: 'input[type="password"]',
-  meSignIn: 'button:has-text("Sign in")',
+  // OTP input: prefer autocomplete standard; exclude hidden fields by type
+  otpInput: [
+    'input[autocomplete="one-time-code"]',
+    "input[name*='otp']:not([type='hidden'])",
+    "input[name*='code']:not([type='hidden'])",
+    'input[type="text"][maxlength="6"]',
+    'input[inputmode="numeric"]',
+  ].join(", "),
 };
 
 function isLoggedInUrl(url: string): boolean {
@@ -30,201 +33,118 @@ function isLoggedInUrl(url: string): boolean {
   );
 }
 
-function buildAccountSelector(username: string): string {
-  return `button:has-text("${username}"), button:has-text("メールアドレスでログイン"), button:has-text("Sign in with email")`;
-}
-
-async function waitForUrlChange(page: Page, timeout: number = TIMEOUTS.redirect): Promise<void> {
-  const initialUrl = page.url();
-  try {
-    await page.waitForURL((url) => url.toString() !== initialUrl, { timeout });
-  } catch {
-    // Ignore timeout: no redirect happened
-  }
-}
-
 /**
- * Check if the current session is valid by navigating to Money Forward
- * and checking if we're redirected to login page
+ * Check if the cached auth state session is still valid.
+ * Navigates to a protected page (/cf) — unauthenticated users get
+ * redirected to id.moneyforward.com, authenticated users stay on /cf.
  */
 async function isSessionValid(page: Page): Promise<boolean> {
-  debug("Checking if session is valid...");
-
   try {
-    // Navigate to a protected page to verify session (home LP is accessible without auth)
     await page.goto(mfUrls.cashFlow, {
       waitUntil: "domcontentloaded",
       timeout: TIMEOUTS.long,
     });
-
-    // Wait a bit for potential redirects
-    await waitForUrlChange(page);
-
-    const currentUrl = page.url();
-    debug("Current URL after navigation:", currentUrl);
-
-    // If we're on the main site (not login/id page), session is valid
-    if (isLoggedInUrl(currentUrl)) {
-      log("Session is valid!");
-      return true;
+    // Brief wait for any post-load redirect
+    try {
+      await page.waitForURL((url) => url.toString() !== mfUrls.cashFlow, { timeout: 2_000 });
+    } catch {
+      // No redirect = still on /cf = session is valid
     }
-
-    debug("Session is invalid, need to login");
-    return false;
-  } catch (err) {
-    debug("Error checking session:", err);
+    const valid = isLoggedInUrl(page.url());
+    debug(`Session valid: ${valid} (${page.url()})`);
+    return valid;
+  } catch {
     return false;
   }
 }
 
-/**
- * Login with auth state if available, otherwise perform full login
- */
 export async function loginWithAuthState(page: Page, context: BrowserContext): Promise<void> {
-  // If auth state exists, check if session is valid
   if (hasAuthState()) {
     info("Auth state found, checking session validity...");
-
-    const valid = await isSessionValid(page);
-    if (valid) {
+    if (await isSessionValid(page)) {
       info("Using existing session from auth state");
       return;
     }
-
     info("Session expired, performing full login...");
   } else {
     info("No auth state found, performing full login...");
   }
 
-  // Perform full login
   await login(page);
-
-  // Save auth state after successful login
   await saveAuthState(context);
 }
 
 export async function login(page: Page): Promise<void> {
   const { email: username, password } = await getCredentials();
 
-  info("Navigating to MFID login page...");
-  await page.goto(mfUrls.auth.signIn, {
-    waitUntil: "domcontentloaded",
-  });
-  info(`Login page loaded: ${page.url()}`);
+  // Snapshot the latest MoneyForward email UID before triggering login.
+  // IMAP SINCE is date-only, so without this we'd pick up stale OTPs from
+  // earlier sessions today instead of the fresh one from this login.
+  const baselineUid = await getBaselineEmailUid();
+  info(`Baseline email UID: ${baselineUid}`);
 
-  // Enter email
+  // ── Step 1: email page ────────────────────────────────────────────────────
+  info("Navigating to MFID login...");
+  await page.goto(mfUrls.auth.signIn, { waitUntil: "domcontentloaded" });
   const emailInput = page.locator(SELECTORS.mfidEmail);
   await emailInput.waitFor({ state: "visible", timeout: TIMEOUTS.medium });
   await emailInput.fill(username);
   await page.locator(SELECTORS.mfidSubmit).click();
 
-  // Wait for password field
-  info("Waiting for password page...");
+  // ── Step 2: password page ─────────────────────────────────────────────────
+  info("Entering password...");
   const passwordInput = page.locator(SELECTORS.mfidPassword);
   await passwordInput.waitFor({ state: "visible", timeout: TIMEOUTS.medium });
-  info(`Password page loaded: ${page.url()}`);
-
-  // Enter password
+  log(`Password page: ${page.url()}`);
   await passwordInput.fill(password);
   await page.locator(SELECTORS.mfidSubmit).click();
 
-  // Wait for page transition after password submit
+  // ── Step 3: post-password navigation ──────────────────────────────────────
   await page.waitForLoadState("domcontentloaded");
-  const afterPasswordUrl = page.url();
-  info(`After password submit: ${afterPasswordUrl}`);
+  info(`After password: ${page.url()}`);
 
-  // Handle email OTP if required (URL contains /email_otp or /otp)
-  if (afterPasswordUrl.includes("otp")) {
+  // ── Step 4: email OTP (if required) ───────────────────────────────────────
+  if (page.url().includes("otp")) {
     info("Email OTP required, fetching from Gmail...");
-    const otp = await getOTP();
+    const otp = await getOTP(baselineUid);
     info("OTP obtained, submitting...");
-    // Try broad set of selectors for the OTP input field
-    const otpInput = page
-      .locator(
-        [
-          'input[autocomplete="one-time-code"]',
-          "input[name*='otp']",
-          "input[name*='code']",
-          'input[type="text"][maxlength="6"]',
-          'input[type="number"][maxlength="6"]',
-          'input[inputmode="numeric"]',
-        ].join(", "),
-      )
-      .first();
+
+    const otpInput = page.locator(SELECTORS.otpInput).first();
     await otpInput.waitFor({ state: "visible", timeout: TIMEOUTS.short });
     await otpInput.fill(otp);
-    await page.locator(SELECTORS.mfidOtpSubmit).first().click();
-    await page.waitForLoadState("domcontentloaded");
-    info(`After OTP submit: ${page.url()}`);
-  }
+    await page.locator(SELECTORS.mfidSubmit).click();
 
-  // Wait for MFID auth to settle
-  await page.waitForURL(/https:\/\/(id\.)?moneyforward\.com\/.*/, {
-    timeout: TIMEOUTS.login,
-  });
-  info(`Settled on: ${page.url()}`);
-
-  // Navigate to Money Forward ME - will redirect to MFID for auth
-  info("Navigating to ME sign_in...");
-  // Don't wait for full load, just start navigation
-  await page.goto(mfUrls.signIn);
-
-  // Wait a bit for redirect to start
-  await waitForUrlChange(page);
-
-  // If we're still on the ME domain, we might be logged in or need more time
-  let currentUrl = page.url();
-  info(`URL after signIn navigation: ${currentUrl}`);
-  if (currentUrl.startsWith(mfUrls.signIn)) {
-    // Wait for redirect to MFID
-    info("Still on signIn, waiting for MFID redirect...");
-    await page.waitForURL(/id\.moneyforward\.com/, {
-      timeout: TIMEOUTS.long,
+    // Wait until we leave the OTP page.
+    // If the OTP is wrong, MF stays on /email_otp and this throws after 30s.
+    await page.waitForURL((url) => !url.toString().includes("email_otp"), {
+      timeout: TIMEOUTS.login,
     });
-    currentUrl = page.url();
-    info(`After MFID redirect: ${currentUrl}`);
+    info(`After OTP: ${page.url()}`);
   }
 
-  // Check if already on ME home (session is valid)
-  if (isLoggedInUrl(currentUrl)) {
-    info("Already logged in to ME!");
-    return;
-  }
+  // ── Step 5: ME OAuth exchange ─────────────────────────────────────────────
+  // MFID session is now established. Navigating to ME sign_in triggers an
+  // OAuth request to MFID. Because we're logged in, MFID auto-grants and
+  // redirects to moneyforward.com/auth/mfid/callback → dashboard.
+  info("Triggering ME OAuth exchange...");
+  await page.goto(mfUrls.signIn, { waitUntil: "domcontentloaded" });
+  info(`After goto sign_in: ${page.url()}`);
 
-  // Check if we're on account selector or password page
-  if (currentUrl.includes("account_selector")) {
-    // Click account button (contains email address)
-    info("Account selector found, clicking account...");
-    const accountButton = page.locator(buildAccountSelector(username)).first();
-    await accountButton.waitFor({ state: "visible", timeout: TIMEOUTS.short });
-    await accountButton.click();
-
-    // Wait for either password page or direct redirect to ME
-    await page.waitForURL(/id\.moneyforward\.com\/sign_in\/password|moneyforward\.com\//, {
-      timeout: TIMEOUTS.long,
+  // Occasionally goto resolves mid-redirect on the MFID OAuth grant page.
+  // Wait for it to complete the redirect back to ME.
+  if (page.url().includes("id.moneyforward.com")) {
+    info("MFID OAuth auto-grant in progress, waiting for redirect to ME...");
+    await page.waitForURL((url) => !url.toString().includes("id.moneyforward.com"), {
+      timeout: TIMEOUTS.login,
     });
-    currentUrl = page.url();
-    info(`After account selector: ${currentUrl}`);
+    info(`After OAuth grant: ${page.url()}`);
   }
 
-  // Check if we need to enter password or already redirected to ME
-  if (currentUrl.includes(mfUrls.auth.password)) {
-    // Wait for password page
-    info("ME password page...");
-    const mePasswordInput = page.locator(SELECTORS.mePassword).first();
-    await mePasswordInput.waitFor({ state: "visible", timeout: TIMEOUTS.medium });
-
-    // Enter password
-    await mePasswordInput.fill(password);
-    await page.locator(SELECTORS.meSignIn).click();
-
-    // Wait for redirect to ME
-    info("Waiting for ME redirect after password...");
-    await page.waitForURL(`${mfUrls.home}**`, { timeout: TIMEOUTS.login });
-    info(`Landed on: ${page.url()}`);
-  } else {
-    warn(`Unexpected URL at end of login: ${currentUrl}`);
+  // ── Step 6: verify success ────────────────────────────────────────────────
+  const finalUrl = page.url();
+  if (!isLoggedInUrl(finalUrl)) {
+    throw new Error(`Login failed — unexpected final URL: ${finalUrl}`);
   }
 
-  info("Login complete!");
+  info("Login successful!");
 }

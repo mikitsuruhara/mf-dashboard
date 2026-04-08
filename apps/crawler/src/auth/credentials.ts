@@ -37,9 +37,51 @@ export async function getCredentials(): Promise<{
 
 const POLL_INTERVAL_MS = 5_000; // check every 5 seconds
 const POLL_TIMEOUT_MS = 90_000; // give up after 90 seconds
-const OTP_WINDOW_MS = 3 * 60 * 1000; // only look at emails from last 3 minutes
 
-export async function getOTP(): Promise<string> {
+/**
+ * Snapshot the latest MoneyForward email UID before triggering login.
+ * Pass the returned value to getOTP() so only emails newer than this
+ * baseline are considered.
+ *
+ * Background: IMAP SINCE is date-only (not datetime), so a time-window
+ * filter like "last 3 minutes" still returns all emails from today.
+ * Without a UID baseline, a stale OTP from an earlier session today
+ * would be picked up instead of the fresh one from the current login.
+ */
+export async function getBaselineEmailUid(): Promise<number> {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) return 0;
+
+  const client = new ImapFlow({
+    host: "imap.gmail.com",
+    port: 993,
+    secure: true,
+    auth: { user, pass },
+    logger: false,
+  });
+
+  try {
+    await client.connect();
+    const lock = await client.getMailboxLock("INBOX");
+    try {
+      const uids = (await client.search({ from: "moneyforward.com" }, { uid: true })) as number[];
+      return uids.length > 0 ? uids[uids.length - 1] : 0;
+    } finally {
+      lock.release();
+    }
+  } catch {
+    return 0;
+  } finally {
+    await client.logout().catch(() => {});
+  }
+}
+
+/**
+ * Poll Gmail until a MoneyForward OTP email with UID > baselineUid arrives.
+ * The baseline ensures we only read the OTP from the current login attempt.
+ */
+export async function getOTP(baselineUid: number = 0): Promise<string> {
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASSWORD;
 
@@ -50,7 +92,7 @@ export async function getOTP(): Promise<string> {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
 
   while (Date.now() < deadline) {
-    const otp = await fetchOTPFromGmail(user, pass);
+    const otp = await fetchOTPFromGmail(user, pass, baselineUid);
     if (otp) return otp;
     await sleep(POLL_INTERVAL_MS);
   }
@@ -66,13 +108,17 @@ export async function getOTP(): Promise<string> {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-async function fetchOTPFromGmail(user: string, pass: string): Promise<string | null> {
+async function fetchOTPFromGmail(
+  user: string,
+  pass: string,
+  baselineUid: number,
+): Promise<string | null> {
   const client = new ImapFlow({
     host: "imap.gmail.com",
     port: 993,
     secure: true,
     auth: { user, pass },
-    logger: false, // suppress verbose IMAP logs in CI
+    logger: false,
   });
 
   try {
@@ -80,15 +126,19 @@ async function fetchOTPFromGmail(user: string, pass: string): Promise<string | n
     const lock = await client.getMailboxLock("INBOX");
 
     try {
-      const since = new Date(Date.now() - OTP_WINDOW_MS);
+      // Fetch all MoneyForward emails, then filter client-side to UIDs above
+      // the baseline. Avoids relying on IMAP UID range search syntax.
+      const allUids = (await client.search(
+        { from: "moneyforward.com" },
+        { uid: true },
+      )) as number[];
 
-      // Search for recent emails from MoneyForward
-      const uids = await client.search({ since, from: "moneyforward.com" }, { uid: true });
+      const newUids = baselineUid > 0 ? allUids.filter((uid) => uid > baselineUid) : allUids;
 
-      if (!uids || uids.length === 0) return null;
+      if (!newUids || newUids.length === 0) return null;
 
-      // Fetch the body of the most recent match
-      const latestUid = String(uids[uids.length - 1]);
+      // Fetch the body of the most recent new email
+      const latestUid = String(newUids[newUids.length - 1]);
       let bodyText = "";
 
       for await (const msg of client.fetch(latestUid, { source: true }, { uid: true })) {
