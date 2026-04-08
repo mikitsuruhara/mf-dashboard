@@ -137,15 +137,20 @@ async function fetchOTPFromGmail(
 
       if (!newUids || newUids.length === 0) return null;
 
-      // Fetch the body of the most recent new email
+      // Fetch raw source of the most recent new email
       const latestUid = String(newUids[newUids.length - 1]);
-      let bodyText = "";
+      let rawSource = "";
 
       for await (const msg of client.fetch(latestUid, { source: true }, { uid: true })) {
-        bodyText = msg.source?.toString("utf8") ?? "";
+        rawSource = msg.source?.toString("utf8") ?? "";
       }
 
-      // MoneyForward OTP emails contain a standalone 6-digit code
+      // Skip MIME headers (everything before the first blank line) to avoid
+      // false matches on numbers in Message-ID, Content-Length, etc.
+      const blankLine = rawSource.indexOf("\r\n\r\n");
+      const bodyText = blankLine >= 0 ? rawSource.slice(blankLine + 4) : rawSource;
+
+      // MoneyForward OTP emails contain a standalone 6-digit code in the body
       const match = bodyText.match(/\b([0-9]{6})\b/);
       return match ? match[1] : null;
     } finally {
