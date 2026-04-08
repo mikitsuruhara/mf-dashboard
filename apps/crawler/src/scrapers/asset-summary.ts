@@ -7,7 +7,7 @@ export async function getAssetSummary(page: Page): Promise<AssetSummary> {
   debug("Getting asset summary from top page...");
 
   await page.goto(mfUrls.home, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
     timeout: 30000,
   });
   // 資産表示エリアが表示されるまで待機（存在しない場合は続行）
@@ -15,7 +15,7 @@ export async function getAssetSummary(page: Page): Promise<AssetSummary> {
     await page
       .locator(".heading-radius-box, .total-assets")
       .first()
-      .waitFor({ state: "visible", timeout: 30000 });
+      .waitFor({ state: "visible", timeout: 10000 });
   } catch {
     debug(".heading-radius-box / .total-assets not found on home page");
     await page

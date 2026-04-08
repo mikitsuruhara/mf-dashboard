@@ -8,12 +8,11 @@ export async function getSpendingTargets(page: Page): Promise<SpendingTargetsDat
   debug("Getting spending targets from /spending_targets/edit...");
 
   await page.goto(mfUrls.spendingTargets, {
-    waitUntil: "networkidle",
-    timeout: 30000,
+    waitUntil: "domcontentloaded",
   });
   // テーブルが表示されるまで待機（存在しない場合は空データを返す）
   try {
-    await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 30000 });
+    await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 10000 });
   } catch {
     debug("table.table-bordered not found on /spending_targets/edit");
     await page

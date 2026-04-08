@@ -8,12 +8,11 @@ export async function getRegisteredAccounts(page: Page): Promise<RegisteredAccou
   debug("Getting registered accounts from /accounts page...");
 
   await page.goto(mfUrls.accounts, {
-    waitUntil: "networkidle",
-    timeout: 30000,
+    waitUntil: "domcontentloaded",
   });
   // テーブルが表示されるまで待機（存在しない場合もあるのでtry-catch）
   try {
-    await page.locator("#account-table").first().waitFor({ state: "visible", timeout: 30000 });
+    await page.locator("#account-table").first().waitFor({ state: "visible", timeout: 10000 });
   } catch {
     debug("No #account-table found on /accounts page");
     return { accounts: [] };

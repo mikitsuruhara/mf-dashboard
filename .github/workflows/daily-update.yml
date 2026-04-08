@@ -39,7 +39,6 @@ jobs:
         with:
           mode: restore
           enabled: ${{ vars.CACHE_AUTH_STATE }}
-      - run: pnpm --filter @mf-dashboard/crawler exec playwright install --with-deps chromium
       - run: mkdir -p /tmp/mf-debug
       - run: pnpm --filter @mf-dashboard/crawler start
         env:

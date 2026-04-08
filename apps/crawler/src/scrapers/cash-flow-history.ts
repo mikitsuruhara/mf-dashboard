@@ -257,10 +257,10 @@ export async function scrapeCashFlowHistory(
 ): Promise<CashFlowHistoryResult[]> {
   log(`Scraping cash flow history for ${monthsToScrape} months...`);
 
-  await page.goto(mfUrls.cashFlow, { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto(mfUrls.cashFlow, { waitUntil: "domcontentloaded" });
   // テーブルが表示されるまで待機（存在しない場合は空配列を返す）
   try {
-    await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 30000 });
+    await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 10000 });
   } catch {
     debug("#cf-detail-table not found on /cf");
     await page

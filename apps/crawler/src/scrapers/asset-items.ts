@@ -8,12 +8,11 @@ export async function getAssetItems(page: Page): Promise<AssetItem[]> {
   debug("Getting asset items from bs/history page...");
 
   await page.goto(mfUrls.assetHistory, {
-    waitUntil: "networkidle",
-    timeout: 30000,
+    waitUntil: "domcontentloaded",
   });
   // テーブルが表示されるまで待機（存在しない場合は空配列を返す）
   try {
-    await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 30000 });
+    await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 10000 });
   } catch {
     debug("table.table-bordered not found on /bs/history");
     return [];

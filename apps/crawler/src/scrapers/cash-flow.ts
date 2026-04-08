@@ -8,10 +8,10 @@ import { SUMMARY_COLUMNS, parseDetailRow } from "./cash-flow-history.js";
 export async function getCashFlow(page: Page): Promise<CashFlowSummary> {
   debug("Getting cash flow from /cf page...");
 
-  await page.goto(mfUrls.cashFlow, { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto(mfUrls.cashFlow, { waitUntil: "domcontentloaded" });
   // テーブルが表示されるまで待機（存在しない場合は空データを返す）
   try {
-    await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 30000 });
+    await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 10000 });
   } catch {
     debug("#cf-detail-table not found on /cf");
     await page.screenshot({ path: "/tmp/mf-debug/cash-flow.png", fullPage: true }).catch(() => {});
@@ -24,7 +24,7 @@ export async function getCashFlow(page: Page): Promise<CashFlowSummary> {
     debug("Clicking today button to navigate to current month");
     await todayButton.click();
     // テーブルの更新を待機
-    await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 30000 });
+    await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 10000 });
   }
 
   // Get totals from summary table (並列取得)

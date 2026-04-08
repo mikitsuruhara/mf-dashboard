@@ -299,11 +299,11 @@ export async function getPortfolio(page: Page): Promise<Portfolio> {
   debug("Getting portfolio from /bs/portfolio page...");
 
   // Get official totalAssets from bs/history (more accurate than summing items)
-  await page.goto(mfUrls.assetHistory, { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto(mfUrls.assetHistory, { waitUntil: "domcontentloaded" });
 
   let totalAssets = 0;
   try {
-    await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 30000 });
+    await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 10000 });
     const firstRow = page.locator("table.table-bordered tbody tr").first();
     const totalText = await firstRow.locator("td").nth(0).textContent({ timeout: 3000 });
     totalAssets = parseJapaneseNumber(totalText || "0");
@@ -313,10 +313,10 @@ export async function getPortfolio(page: Page): Promise<Portfolio> {
   }
 
   // Get individual items from bs/portfolio
-  await page.goto(mfUrls.portfolio, { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto(mfUrls.portfolio, { waitUntil: "domcontentloaded" });
   // ポートフォリオコンテンツが表示されるまで待機
   try {
-    await page.locator("h1.heading-normal").first().waitFor({ state: "visible", timeout: 30000 });
+    await page.locator("h1.heading-normal").first().waitFor({ state: "visible", timeout: 10000 });
   } catch {
     debug("  Portfolio page heading not found — continuing with empty portfolio");
   }
