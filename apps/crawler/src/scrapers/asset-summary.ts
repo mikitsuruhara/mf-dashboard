@@ -7,14 +7,14 @@ export async function getAssetSummary(page: Page): Promise<AssetSummary> {
   debug("Getting asset summary from top page...");
 
   await page.goto(mfUrls.home, {
-    waitUntil: "domcontentloaded",
+    waitUntil: "networkidle",
     timeout: 30000,
   });
   // 資産表示エリアが表示されるまで待機
   await page
     .locator(".heading-radius-box, .total-assets")
     .first()
-    .waitFor({ state: "visible", timeout: 10000 });
+    .waitFor({ state: "visible", timeout: 30000 });
 
   // Get total assets - try multiple selectors
   let totalAssets = "取得失敗";

@@ -257,9 +257,9 @@ export async function scrapeCashFlowHistory(
 ): Promise<CashFlowHistoryResult[]> {
   log(`Scraping cash flow history for ${monthsToScrape} months...`);
 
-  await page.goto(mfUrls.cashFlow, { waitUntil: "domcontentloaded" });
+  await page.goto(mfUrls.cashFlow, { waitUntil: "networkidle", timeout: 30000 });
   // テーブルが表示されるまで待機
-  await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 10000 });
+  await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 30000 });
 
   const results: CashFlowHistoryResult[] = [];
 

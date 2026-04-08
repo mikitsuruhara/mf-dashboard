@@ -8,9 +8,9 @@ import { SUMMARY_COLUMNS, parseDetailRow } from "./cash-flow-history.js";
 export async function getCashFlow(page: Page): Promise<CashFlowSummary> {
   debug("Getting cash flow from /cf page...");
 
-  await page.goto(mfUrls.cashFlow, { waitUntil: "domcontentloaded" });
+  await page.goto(mfUrls.cashFlow, { waitUntil: "networkidle", timeout: 30000 });
   // テーブルが表示されるまで待機
-  await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 10000 });
+  await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 30000 });
 
   // Click "today" button to ensure we're viewing the current month
   const todayButton = page.locator(".fc-button-today").first();
@@ -18,7 +18,7 @@ export async function getCashFlow(page: Page): Promise<CashFlowSummary> {
     debug("Clicking today button to navigate to current month");
     await todayButton.click();
     // テーブルの更新を待機
-    await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 10000 });
+    await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 30000 });
   }
 
   // Get totals from summary table (並列取得)

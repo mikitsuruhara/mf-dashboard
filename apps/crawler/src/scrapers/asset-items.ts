@@ -8,10 +8,11 @@ export async function getAssetItems(page: Page): Promise<AssetItem[]> {
   debug("Getting asset items from bs/history page...");
 
   await page.goto(mfUrls.assetHistory, {
-    waitUntil: "domcontentloaded",
+    waitUntil: "networkidle",
+    timeout: 30000,
   });
   // テーブルが表示されるまで待機
-  await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 10000 });
+  await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 30000 });
 
   const items: AssetItem[] = [];
 

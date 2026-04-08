@@ -8,10 +8,11 @@ export async function getSpendingTargets(page: Page): Promise<SpendingTargetsDat
   debug("Getting spending targets from /spending_targets/edit...");
 
   await page.goto(mfUrls.spendingTargets, {
-    waitUntil: "domcontentloaded",
+    waitUntil: "networkidle",
+    timeout: 30000,
   });
   // テーブルが表示されるまで待機
-  await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 10000 });
+  await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 30000 });
 
   const categories: SpendingTarget[] = [];
 
