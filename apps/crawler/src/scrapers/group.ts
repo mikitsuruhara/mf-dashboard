@@ -157,7 +157,8 @@ export async function switchGroup(page: Page, groupId: string): Promise<Group | 
 
   const groupSelect = await getGroupSelector(page);
   if (!groupSelect) {
-    throw new Error("Group selector not found");
+    log("Group selector not found — account has no groups, skipping switch");
+    return null;
   }
 
   // 現在の値と同じ場合は何もしない
