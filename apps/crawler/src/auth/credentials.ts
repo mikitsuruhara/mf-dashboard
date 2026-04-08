@@ -142,13 +142,13 @@ async function fetchOTPFromGmail(
       // Raw source regex is not safe because HTML parts are typically base64-encoded —
       // running regex on base64 data produces false 6-digit matches.
       const latestUid = String(newUids[newUids.length - 1]);
-      let rawSource: Uint8Array | undefined;
+      let rawSource: string | undefined;
 
       for await (const msg of client.fetch(latestUid, { source: true }, { uid: true })) {
-        rawSource = msg.source;
+        rawSource = msg.source?.toString("utf8");
       }
 
-      if (!rawSource?.length) return null;
+      if (!rawSource) return null;
 
       const parsed = await new PostalMime().parse(rawSource);
       // Prefer plain text; fall back to subject line (some OTP emails are text-only)
