@@ -133,7 +133,7 @@ export async function loginWithAuthState(page: Page, context: BrowserContext): P
 }
 
 export async function login(page: Page): Promise<void> {
-  const { username, password } = await getCredentials();
+  const { email: username, password } = await getCredentials();
 
   debug("Navigating to login page...");
   await page.goto(mfUrls.auth.signIn, {
