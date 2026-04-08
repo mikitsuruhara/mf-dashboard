@@ -145,7 +145,6 @@ export async function login(page: Page): Promise<void> {
           'input[autocomplete="one-time-code"]',
           "input[name*='otp']",
           "input[name*='code']",
-          "input[name*='token']",
           'input[type="text"][maxlength="6"]',
           'input[type="number"][maxlength="6"]',
           'input[inputmode="numeric"]',
