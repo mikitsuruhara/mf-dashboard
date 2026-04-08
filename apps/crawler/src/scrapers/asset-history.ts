@@ -11,8 +11,13 @@ export async function getAssetHistory(page: Page): Promise<AssetHistory> {
     waitUntil: "networkidle",
     timeout: 30000,
   });
-  // テーブルが表示されるまで待機
-  await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 30000 });
+  // テーブルが表示されるまで待機（存在しない場合は空データを返す）
+  try {
+    await page.locator("table.table-bordered").waitFor({ state: "visible", timeout: 30000 });
+  } catch {
+    debug("table.table-bordered not found on /bs/history");
+    return { points: [] };
+  }
 
   const points: AssetHistoryPoint[] = [];
 

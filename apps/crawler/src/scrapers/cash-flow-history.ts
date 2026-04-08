@@ -258,8 +258,13 @@ export async function scrapeCashFlowHistory(
   log(`Scraping cash flow history for ${monthsToScrape} months...`);
 
   await page.goto(mfUrls.cashFlow, { waitUntil: "networkidle", timeout: 30000 });
-  // テーブルが表示されるまで待機
-  await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 30000 });
+  // テーブルが表示されるまで待機（存在しない場合は空配列を返す）
+  try {
+    await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 30000 });
+  } catch {
+    debug("#cf-detail-table not found on /cf");
+    return [];
+  }
 
   const results: CashFlowHistoryResult[] = [];
 

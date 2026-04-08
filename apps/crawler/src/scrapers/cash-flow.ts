@@ -9,8 +9,13 @@ export async function getCashFlow(page: Page): Promise<CashFlowSummary> {
   debug("Getting cash flow from /cf page...");
 
   await page.goto(mfUrls.cashFlow, { waitUntil: "networkidle", timeout: 30000 });
-  // テーブルが表示されるまで待機
-  await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 30000 });
+  // テーブルが表示されるまで待機（存在しない場合は空データを返す）
+  try {
+    await page.locator("#cf-detail-table").waitFor({ state: "visible", timeout: 30000 });
+  } catch {
+    debug("#cf-detail-table not found on /cf");
+    return { month: "", totalIncome: 0, totalExpense: 0, balance: 0, items: [] };
+  }
 
   // Click "today" button to ensure we're viewing the current month
   const todayButton = page.locator(".fc-button-today").first();

@@ -10,11 +10,15 @@ export async function getAssetSummary(page: Page): Promise<AssetSummary> {
     waitUntil: "networkidle",
     timeout: 30000,
   });
-  // 資産表示エリアが表示されるまで待機
-  await page
-    .locator(".heading-radius-box, .total-assets")
-    .first()
-    .waitFor({ state: "visible", timeout: 30000 });
+  // 資産表示エリアが表示されるまで待機（存在しない場合は続行）
+  try {
+    await page
+      .locator(".heading-radius-box, .total-assets")
+      .first()
+      .waitFor({ state: "visible", timeout: 30000 });
+  } catch {
+    debug(".heading-radius-box / .total-assets not found on home page");
+  }
 
   // Get total assets - try multiple selectors
   let totalAssets = "取得失敗";
