@@ -86,7 +86,11 @@ export function aggregateLiabilitiesByCategory(
   const breakdown: Record<string, number> = {};
 
   for (const holding of holdings) {
-    if (holding.type === "liability" && holding.amount) {
+    if (
+      holding.type === "liability" &&
+      holding.amount &&
+      holding.liabilityCategory !== "住宅ローン"
+    ) {
       const category = holding.liabilityCategory || "その他";
       breakdown[category] = (breakdown[category] || 0) + holding.amount;
     }

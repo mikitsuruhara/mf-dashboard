@@ -7,6 +7,7 @@ import { mfUrls } from "@mf-dashboard/meta/urls";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CategoryBreakdown } from "../../../components/info/category-breakdown/category-breakdown";
+import { CumulativeExpenseChart } from "../../../components/info/cumulative-expense-chart";
 import { DailySpendingHeatmap } from "../../../components/info/daily-spending-heatmap";
 import { DateFilterProvider } from "../../../components/info/date-filter-context";
 import { FixedVariableBreakdown } from "../../../components/info/fixed-variable-breakdown";
@@ -45,6 +46,8 @@ export async function CFMonthContent({ month, groupId }: { month: string; groupI
       href={mfUrls.cashFlow}
       options={<MonthSelector currentMonth={month} basePath={basePath} groupId={groupId} />}
     >
+      <CumulativeExpenseChart month={month} groupId={groupId} />
+
       <SankeyDiagram month={month} groupId={groupId} />
 
       <div className="grid gap-6 grid-cols-1 md:grid-cols-2">

@@ -693,3 +693,126 @@ export async function getExpenseByFixedVariable(
     },
   };
 }
+
+export interface CumulativeExpensePoint {
+  day: number; // 1–31
+  current: number; // cumulative expense for the target month up to this day
+  previous: number | null; // cumulative expense for the previous month (null if no data)
+  average: number | null; // cumulative expense average of past 12 months (null if no data)
+}
+
+/**
+ * Returns day-by-day cumulative expense for a given month, plus reference lines
+ * for the previous month and 12-month average.
+ *
+ * Uses only type='expense', is_excluded=0, is_transfer=0 — matching what MF shows
+ * as "支出" in the app. Transfer deduplication is skipped deliberately: this is a
+ * spending pace visual, not a reconciled P&L.
+ */
+export async function getCumulativeExpense(
+  month: string, // "YYYY-MM"
+  groupIdParam?: string,
+  db: Db = getDb(),
+): Promise<CumulativeExpensePoint[]> {
+  const groupId = await resolveGroupId(db, groupIdParam);
+  if (!groupId) return [];
+
+  const accountIds = await getAccountIdsForGroup(db, groupId);
+  if (accountIds.length === 0) return [];
+
+  const simpleExpenseCondition = and(
+    inArray(schema.transactions.accountId, accountIds),
+    sql`${schema.transactions.type} = 'expense'`,
+    sql`${schema.transactions.isExcludedFromCalculation} = 0`,
+    sql`${schema.transactions.isTransfer} = 0`,
+  );
+
+  // Current month daily totals
+  const currentRows = await db
+    .select({
+      day: sql<number>`CAST(substr(${schema.transactions.date}, 9, 2) AS INTEGER)`,
+      amount: sql<number>`SUM(${schema.transactions.amount})`,
+    })
+    .from(schema.transactions)
+    .where(and(like(schema.transactions.date, `${month}%`), simpleExpenseCondition))
+    .groupBy(sql`substr(${schema.transactions.date}, 9, 2)`)
+    .all();
+
+  // Previous month
+  const [year, mon] = month.split("-").map(Number);
+  const prevDate = new Date(year, mon - 2, 1);
+  const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
+
+  const prevRows = await db
+    .select({
+      day: sql<number>`CAST(substr(${schema.transactions.date}, 9, 2) AS INTEGER)`,
+      amount: sql<number>`SUM(${schema.transactions.amount})`,
+    })
+    .from(schema.transactions)
+    .where(and(like(schema.transactions.date, `${prevMonth}%`), simpleExpenseCondition))
+    .groupBy(sql`substr(${schema.transactions.date}, 9, 2)`)
+    .all();
+
+  // Past 12 months average (day-of-month average across all months with data)
+  const past12Start = new Date(year, mon - 13, 1);
+  const past12Prefix = `${past12Start.getFullYear()}-${String(past12Start.getMonth() + 1).padStart(2, "0")}`;
+
+  const avgRows = await db
+    .select({
+      day: sql<number>`CAST(substr(${schema.transactions.date}, 9, 2) AS INTEGER)`,
+      monthCount: sql<number>`COUNT(DISTINCT substr(${schema.transactions.date}, 1, 7))`,
+      totalAmount: sql<number>`SUM(${schema.transactions.amount})`,
+    })
+    .from(schema.transactions)
+    .where(
+      and(
+        sql`substr(${schema.transactions.date}, 1, 7) >= ${past12Prefix}`,
+        sql`substr(${schema.transactions.date}, 1, 7) < ${month}`,
+        simpleExpenseCondition,
+      ),
+    )
+    .groupBy(sql`substr(${schema.transactions.date}, 9, 2)`)
+    .all();
+
+  // Build day maps
+  const currentByDay = new Map(currentRows.map((r) => [r.day, r.amount]));
+  const prevByDay = new Map(prevRows.map((r) => [r.day, r.amount]));
+  const avgByDay = new Map(avgRows.map((r) => [r.day, r.totalAmount / r.monthCount]));
+
+  const hasPrev = prevRows.length > 0;
+  const hasAvg = avgRows.length > 0;
+
+  // Determine days to show: all days 1–(last day with data in current month or end of month)
+  const daysInMonth = new Date(year, mon, 0).getDate();
+  const lastCurrentDay = currentRows.length > 0 ? Math.max(...currentRows.map((r) => r.day)) : 0;
+
+  const points: CumulativeExpensePoint[] = [];
+  let cumCurrent = 0;
+  let cumPrev = 0;
+  let cumAvg = 0;
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    cumCurrent += currentByDay.get(day) ?? 0;
+    cumPrev += prevByDay.get(day) ?? 0;
+    cumAvg += avgByDay.get(day) ?? 0;
+
+    // Only emit days up to today for current month
+    if (day > lastCurrentDay && lastCurrentDay > 0) {
+      points.push({
+        day,
+        current: NaN, // no data yet — chart will render as gap
+        previous: hasPrev ? Math.round(cumPrev) : null,
+        average: hasAvg ? Math.round(cumAvg) : null,
+      });
+    } else if (day <= lastCurrentDay || lastCurrentDay === 0) {
+      points.push({
+        day,
+        current: cumCurrent,
+        previous: hasPrev ? Math.round(cumPrev) : null,
+        average: hasAvg ? Math.round(cumAvg) : null,
+      });
+    }
+  }
+
+  return points;
+}
