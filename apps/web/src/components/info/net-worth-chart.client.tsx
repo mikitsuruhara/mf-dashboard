@@ -17,7 +17,6 @@ import {
 } from "recharts";
 import { NET_WORTH_PERIOD_OPTIONS, filterNetWorthByPeriod, type Period } from "../../lib/chart";
 import { semanticColors } from "../../lib/colors";
-import { formatCurrency } from "../../lib/format";
 import { cn } from "../../lib/utils";
 import { ChartTooltipContent } from "../charts/chart-tooltip";
 import { AmountDisplay } from "../ui/amount-display";

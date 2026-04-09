@@ -7,11 +7,7 @@ import {
   TEST_GROUP_ID,
   createTestGroup,
 } from "../test-helpers";
-import {
-  getNetWorthHistory,
-  getNetWorthChangeSummaries,
-  type NetWorthHistoryPoint,
-} from "./net-worth";
+import { getNetWorthHistory, getNetWorthChangeSummaries } from "./net-worth";
 
 type Db = Awaited<ReturnType<typeof createTestDb>>;
 let db: Db;
