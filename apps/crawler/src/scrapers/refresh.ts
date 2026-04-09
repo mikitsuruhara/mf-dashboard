@@ -7,6 +7,7 @@ const DEFAULT_MAX_WAIT_MINUTES = 20;
 const MAX_WAIT_TIME_MS =
   (Number(process.env.MAX_WAIT_MINUTES) || DEFAULT_MAX_WAIT_MINUTES) * 60 * 1000; // default: 20 minutes
 const POLL_INTERVAL_MS = 30000; // 30 seconds
+const MAX_STALE_POLLS = 3; // give up after 3 consecutive polls with no change (~90s)
 
 async function navigateToAccountsPage(page: Page): Promise<void> {
   await page.goto(mfUrls.accounts);
@@ -68,6 +69,8 @@ export async function clickRefreshButton(page: Page): Promise<RefreshResult> {
   info("Waiting for all updates to complete on /accounts page...");
 
   const startTime = Date.now();
+  let lastCount = -1;
+  let stalePolls = 0;
 
   while (Date.now() - startTime < MAX_WAIT_TIME_MS) {
     // Count accounts with "更新中" status (exclude cells that also have "正常" - hidden text)
@@ -89,6 +92,19 @@ export async function clickRefreshButton(page: Page): Promise<RefreshResult> {
       info("All updates completed!");
       return { completed: true, incompleteAccounts: [] };
     }
+
+    if (updatingCount === lastCount) {
+      stalePolls++;
+      if (stalePolls >= MAX_STALE_POLLS) {
+        warn(
+          `No progress for ${MAX_STALE_POLLS} consecutive polls — accounts appear stuck, moving on.`,
+        );
+        break;
+      }
+    } else {
+      stalePolls = 0;
+    }
+    lastCount = updatingCount;
 
     // Wait and navigate to accounts page again to get fresh status
     // Using goto instead of reload to avoid ERR_ABORTED when frame is detached
