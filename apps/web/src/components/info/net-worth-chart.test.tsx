@@ -4,9 +4,27 @@ import { describe, it, expect } from "vitest";
 import { NetWorthChartClient } from "./net-worth-chart.client";
 
 const HISTORY: NetWorthHistoryPoint[] = [
-  { date: "2025-01-01", assets: 10_000_000, liabilities: 500_000, netWorth: 9_500_000 },
-  { date: "2025-04-01", assets: 11_000_000, liabilities: 400_000, netWorth: 10_600_000 },
-  { date: "2025-07-01", assets: 12_000_000, liabilities: 300_000, netWorth: 11_700_000 },
+  {
+    date: "2025-01-01",
+    assets: 10_000_000,
+    liabilities: 500_000,
+    netWorth: 9_500_000,
+    source: "holding_values",
+  },
+  {
+    date: "2025-04-01",
+    assets: 11_000_000,
+    liabilities: 400_000,
+    netWorth: 10_600_000,
+    source: "holding_values",
+  },
+  {
+    date: "2025-07-01",
+    assets: 12_000_000,
+    liabilities: 300_000,
+    netWorth: 11_700_000,
+    source: "holding_values",
+  },
 ];
 
 const ALL_PERIODS: Array<NetWorthChangeSummary["period"]> = [

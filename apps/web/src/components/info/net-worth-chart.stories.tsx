@@ -32,6 +32,7 @@ function generateMockHistory(): NetWorthHistoryPoint[] {
       assets,
       liabilities,
       netWorth: assets - liabilities,
+      source: "holding_values" as const,
     };
   });
 }
@@ -102,7 +103,13 @@ export const AllChipsUnavailable: Story = {
   beforeEach() {
     // Only one data point → all change periods unavailable
     const singlePoint: NetWorthHistoryPoint[] = [
-      { date: "2026-04-09", assets: 8_500_000, liabilities: 500_000, netWorth: 8_000_000 },
+      {
+        date: "2026-04-09",
+        assets: 8_500_000,
+        liabilities: 500_000,
+        netWorth: 8_000_000,
+        source: "holding_values",
+      },
     ];
     mocked(getNetWorthHistory).mockResolvedValue(singlePoint);
     mocked(getNetWorthChangeSummaries).mockResolvedValue(generateMockSummaries(false));
@@ -130,6 +137,7 @@ export const NegativeNetWorth: Story = {
         assets: 5_000_000 + i * 10_000,
         liabilities: 8_000_000 - i * 5_000,
         netWorth: -3_000_000 + i * 15_000,
+        source: "holding_values" as const,
       };
     });
     mocked(getNetWorthHistory).mockResolvedValue(history);

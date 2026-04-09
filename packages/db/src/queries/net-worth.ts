@@ -1,6 +1,6 @@
 import { eq, sql, and, inArray, or, ne, isNull, not } from "drizzle-orm";
 import { getDb, type Db, schema } from "../index";
-import { resolveGroupId, getAccountIdsForGroup } from "../shared/group-filter";
+import { resolveGroupId } from "../shared/group-filter";
 
 /**
  * Liability categories excluded from net worth.
@@ -19,6 +19,8 @@ export interface NetWorthHistoryPoint {
   assets: number;
   liabilities: number;
   netWorth: number;
+  /** Whether this point has full asset+liability breakdown (holding_values) or asset-only (asset_history). */
+  source: "holding_values" | "asset_history";
 }
 
 export interface NetWorthChangeSummary {
@@ -63,14 +65,14 @@ function comparisonDate(latestDate: string, period: NetWorthChangePeriod): strin
 // ============================================================
 
 /**
- * Computes historical net worth at query time from dailySnapshots + holdingValues + holdings.
+ * Computes historical net worth using:
+ * - assets: always from asset_history.total_assets (authoritative — includes all MF-tracked assets
+ *   regardless of group_accounts membership, matching what MF's own history page shows).
+ * - liabilities: from holding_values (only available for dates the crawler has run).
+ *   Mortgage (住宅ローン) is excluded since the property value is not tracked on the asset side.
  *
- * - assets = sum of holding_values.amount where holdings.type = 'asset'
- * - liabilities = sum of holding_values.amount where holdings.type = 'liability' (positive magnitude)
- * - netWorth = assets - liabilities
- *
- * When groupId is provided, filters holdings to the group's current account IDs applied
- * across all dates (no historical group membership reconstruction).
+ * Points where holding_values data exists are marked source="holding_values" and used for
+ * change chip comparisons. All other points are source="asset_history".
  *
  * Returns data in ascending date order.
  */
@@ -81,9 +83,22 @@ export async function getNetWorthHistory(
   const groupId = await resolveGroupId(db, options?.groupId);
   if (!groupId) return [];
 
-  const accountIds = await getAccountIdsForGroup(db, groupId);
+  // Step 1: get all asset_history rows for this group (authoritative asset values).
+  const ahRows = await db
+    .select({
+      date: schema.assetHistory.date,
+      totalAssets: schema.assetHistory.totalAssets,
+    })
+    .from(schema.assetHistory)
+    .where(eq(schema.assetHistory.groupId, groupId))
+    .all();
 
-  // Step 1: get max snapshot id per date (use latest run when multiple on same day)
+  if (ahRows.length === 0) return [];
+
+  const assetsByDate = new Map(ahRows.map((r) => [r.date, r.totalAssets]));
+
+  // Step 2: get liabilities per date from holding_values.
+  // Use the latest snapshot per date; no account filter — liabilities are account-agnostic.
   const snapshotsByDate = await db
     .select({
       date: schema.dailySnapshots.date,
@@ -93,65 +108,58 @@ export async function getNetWorthHistory(
     .groupBy(schema.dailySnapshots.date)
     .all();
 
-  if (snapshotsByDate.length === 0) return [];
+  const liabilitiesByDate = new Map<string, number>();
 
-  const snapshotIds = snapshotsByDate.map((s) => s.snapshotId);
-  const snapshotDateMap = new Map(snapshotsByDate.map((s) => [s.snapshotId, s.date]));
+  if (snapshotsByDate.length > 0) {
+    const snapshotIds = snapshotsByDate.map((s) => s.snapshotId);
+    const snapshotDateMap = new Map(snapshotsByDate.map((s) => [s.snapshotId, s.date]));
 
-  // Step 2: sum asset/liability amounts per snapshot, optionally filtered by account.
-  // Exclude mortgage liabilities (no corresponding property value on the asset side).
-  const snapshotFilter = inArray(schema.holdingValues.snapshotId, snapshotIds);
-  const accountFilter =
-    accountIds.length > 0 ? inArray(schema.holdings.accountId, accountIds) : undefined;
-  // Keep a row unless: type='liability' AND liabilityCategory IS NOT NULL AND liabilityCategory IN exclusion list.
-  // Must use OR decomposition to correctly handle NULL liabilityCategory (NULL IN (...) = NULL, falsy in WHERE).
-  const mortgageExclusion = or(
-    ne(schema.holdings.type, "liability"),
-    isNull(schema.holdings.liabilityCategory),
-    not(inArray(schema.holdings.liabilityCategory, [...EXCLUDED_LIABILITY_CATEGORIES])),
-  );
-  const whereCondition = accountFilter
-    ? and(snapshotFilter, accountFilter, mortgageExclusion)
-    : and(snapshotFilter, mortgageExclusion);
+    // Exclude mortgage liabilities (no corresponding property value on the asset side).
+    const mortgageExclusion = or(
+      ne(schema.holdings.type, "liability"),
+      isNull(schema.holdings.liabilityCategory),
+      not(inArray(schema.holdings.liabilityCategory, [...EXCLUDED_LIABILITY_CATEGORIES])),
+    );
 
-  const holdingData = await db
-    .select({
-      snapshotId: schema.holdingValues.snapshotId,
-      type: schema.holdings.type,
-      total: sql<number>`COALESCE(SUM(${schema.holdingValues.amount}), 0)`,
-    })
-    .from(schema.holdingValues)
-    .innerJoin(schema.holdings, eq(schema.holdings.id, schema.holdingValues.holdingId))
-    .where(whereCondition)
-    .groupBy(schema.holdingValues.snapshotId, schema.holdings.type)
-    .all();
+    const liabilityData = await db
+      .select({
+        snapshotId: schema.holdingValues.snapshotId,
+        total: sql<number>`COALESCE(SUM(${schema.holdingValues.amount}), 0)`,
+      })
+      .from(schema.holdingValues)
+      .innerJoin(schema.holdings, eq(schema.holdings.id, schema.holdingValues.holdingId))
+      .where(
+        and(
+          inArray(schema.holdingValues.snapshotId, snapshotIds),
+          eq(schema.holdings.type, "liability"),
+          mortgageExclusion,
+        ),
+      )
+      .groupBy(schema.holdingValues.snapshotId)
+      .all();
 
-  // Step 3: combine into NetWorthHistoryPoint[] in application code
-  const byDate = new Map<string, { assets: number; liabilities: number }>();
-
-  for (const row of holdingData) {
-    const date = snapshotDateMap.get(row.snapshotId);
-    if (!date) continue;
-
-    if (!byDate.has(date)) {
-      byDate.set(date, { assets: 0, liabilities: 0 });
-    }
-
-    const entry = byDate.get(date)!;
-    if (row.type === "asset") {
-      entry.assets += row.total;
-    } else if (row.type === "liability") {
-      entry.liabilities += row.total;
+    for (const row of liabilityData) {
+      const date = snapshotDateMap.get(row.snapshotId);
+      if (date) liabilitiesByDate.set(date, row.total);
     }
   }
 
-  return Array.from(byDate.entries())
-    .map(([date, { assets, liabilities }]) => ({
-      date,
-      assets,
-      liabilities,
-      netWorth: assets - liabilities,
-    }))
+  // Step 3: combine. For each date in asset_history, use total_assets as assets
+  // and holding_values liabilities if available.
+  return Array.from(assetsByDate.entries())
+    .map(([date, assets]) => {
+      const liabilities = liabilitiesByDate.get(date) ?? 0;
+      const hasLiabilityData = liabilitiesByDate.has(date);
+      return {
+        date,
+        assets,
+        liabilities,
+        netWorth: assets - liabilities,
+        source: (hasLiabilityData
+          ? "holding_values"
+          : "asset_history") as NetWorthHistoryPoint["source"],
+      };
+    })
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
@@ -190,15 +198,31 @@ export async function getNetWorthChangeSummaries(
   }
 
   const latest = history[history.length - 1];
+
+  // Only compute changes if the latest point has full asset+liability data.
+  // Comparing holding_values net worth against asset_history total (no liabilities) produces
+  // misleading numbers — e.g. assets-only historical value looks like a massive drop.
+  if (latest.source !== "holding_values") {
+    return CHANGE_PERIODS.map((period) => ({
+      period,
+      currentValue: latest.netWorth,
+      previousValue: 0,
+      absoluteChange: 0,
+      percentChange: null,
+      available: false,
+    }));
+  }
+
   const currentValue = latest.netWorth;
 
   return CHANGE_PERIODS.map((period) => {
     const targetDateStr = comparisonDate(latest.date, period);
 
-    // Find the latest point on or before targetDateStr (descending scan from second-to-last)
+    // Only use holding_values points as comparison targets — asset_history net worth
+    // (= total assets, no liabilities deducted) is not comparable to holding_values net worth.
     let previousPoint: NetWorthHistoryPoint | undefined;
     for (let i = history.length - 2; i >= 0; i--) {
-      if (history[i].date <= targetDateStr) {
+      if (history[i].date <= targetDateStr && history[i].source === "holding_values") {
         previousPoint = history[i];
         break;
       }

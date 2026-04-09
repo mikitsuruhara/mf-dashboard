@@ -102,6 +102,7 @@ interface TooltipPayloadEntry {
   fill?: string;
   stroke?: string;
   dataKey: string;
+  payload?: Record<string, unknown>;
 }
 
 interface CustomTooltipProps {
@@ -118,32 +119,77 @@ function NetWorthTooltip({ active, payload, label, period }: CustomTooltipProps)
   const dateLabel =
     period === "1m" ? `${year}/${Number(month)}/${Number(day)}` : `${year}/${Number(month)}`;
 
-  const assets = payload.find((p) => p.dataKey === "assets");
-  const liabilities = payload.find((p) => p.dataKey === "liabilitiesNeg");
-  const netWorth = payload.find((p) => p.dataKey === "netWorth");
+  // All fields come from the data entry (single Bar with custom shape)
+  const entry = payload[0]?.payload as
+    | { assets: number; liabilities: number; netWorth: number }
+    | undefined;
+  if (!entry) return null;
 
   return (
     <ChartTooltipContent>
       <div className="font-semibold mb-2 text-foreground">{dateLabel}</div>
-      {assets && (
-        <div className="flex justify-between gap-6">
-          <span className="text-muted-foreground">資産</span>
-          <AmountDisplay amount={assets.value} size="sm" weight="medium" />
-        </div>
-      )}
-      {liabilities && (
+      <div className="flex justify-between gap-6">
+        <span className="text-muted-foreground">資産</span>
+        <AmountDisplay amount={entry.assets} size="sm" weight="medium" />
+      </div>
+      {entry.liabilities > 0 && (
         <div className="flex justify-between gap-6">
           <span className="text-muted-foreground">負債</span>
-          <AmountDisplay amount={Math.abs(liabilities.value)} size="sm" weight="medium" />
+          <AmountDisplay amount={entry.liabilities} size="sm" weight="medium" />
         </div>
       )}
-      {netWorth && (
-        <div className="flex justify-between gap-6 mt-1.5 pt-1.5 border-t">
-          <span className="font-medium">純資産</span>
-          <AmountDisplay amount={netWorth.value} type="balance" size="sm" weight="semibold" />
-        </div>
-      )}
+      <div className="flex justify-between gap-6 mt-1.5 pt-1.5 border-t">
+        <span className="font-medium">純資産</span>
+        <AmountDisplay amount={entry.netWorth} type="balance" size="sm" weight="semibold" />
+      </div>
     </ChartTooltipContent>
+  );
+}
+
+// ============================================================
+// Custom bar shape: assets go up from 0, liabilities go down from 0
+// ============================================================
+
+interface CombinedBarProps {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  payload?: { assets: number; liabilities: number };
+}
+
+function CombinedBar({ x = 0, y = 0, width = 0, height = 0, payload }: CombinedBarProps) {
+  if (!width || height <= 0 || !payload?.assets) return null;
+
+  // For a positive bar in Recharts: y = top of bar, y + height = the zero-line y pixel.
+  // This holds regardless of whether the y-axis domain includes negatives.
+  const baselineY = y + height;
+  const scale = height / payload.assets; // pixels per currency unit
+  const liabilityHeight = payload.liabilities > 0 ? payload.liabilities * scale : 0;
+
+  return (
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill={semanticColors.totalAssets}
+        fillOpacity={0.7}
+        rx={2}
+      />
+      {liabilityHeight > 0 && (
+        <rect
+          x={x}
+          y={baselineY}
+          width={width}
+          height={liabilityHeight}
+          fill={semanticColors.liability}
+          fillOpacity={0.7}
+          rx={2}
+        />
+      )}
+    </g>
   );
 }
 
@@ -166,13 +212,17 @@ export function NetWorthChartClient({
 
   const filteredData = filterNetWorthByPeriod(history, period);
 
-  // Negate liabilities for below-zero bar rendering
   const chartData = filteredData.map((p) => ({
     date: p.date,
     assets: p.assets,
+    liabilities: p.liabilities,
     liabilitiesNeg: -p.liabilities,
     netWorth: p.netWorth,
   }));
+
+  // Y-axis minimum must accommodate liability bars below zero
+  const maxLiability = Math.max(...chartData.map((d) => d.liabilities), 0);
+  const yDomainMin = maxLiability > 0 ? -maxLiability * 1.2 : 0;
 
   const formatDateLabel = (dateStr: string) => {
     const [year, month, day] = dateStr.split("-");
@@ -181,6 +231,11 @@ export function NetWorthChartClient({
     if (period === "1m") return `${m}/${d}`;
     if (period === "3m" || period === "6m") return `${m}月`;
     return `${year}/${m}`;
+  };
+
+  const formatYAxis = (value: number) => {
+    if (value < 0) return `-${Math.abs(value / 10_000).toFixed(0)}万`;
+    return `${(value / 10_000).toFixed(0)}万`;
   };
 
   // Latest values for header display
@@ -238,31 +293,20 @@ export function NetWorthChartClient({
               tick={{ fontSize: 11 }}
               tickLine={false}
               axisLine={false}
-              tickFormatter={(value) => `${(value / 10_000).toFixed(0)}万`}
+              domain={[yDomainMin, "auto"]}
+              tickFormatter={formatYAxis}
             />
             <Tooltip
               content={<NetWorthTooltip period={period} />}
               cursor={{ fill: "transparent" }}
             />
 
-            {/* Assets: positive bars */}
+            {/* Single bar: assets go up from 0, liabilities go down from 0 via custom shape */}
             <Bar
               dataKey="assets"
               name="資産"
-              fill={semanticColors.totalAssets}
-              fillOpacity={0.7}
-              radius={[2, 2, 0, 0]}
               maxBarSize={40}
-            />
-
-            {/* Liabilities: negative bars (values already negated in chartData) */}
-            <Bar
-              dataKey="liabilitiesNeg"
-              name="負債"
-              fill={semanticColors.liability}
-              fillOpacity={0.7}
-              radius={[0, 0, 2, 2]}
-              maxBarSize={40}
+              shape={(props: CombinedBarProps) => <CombinedBar {...props} />}
             />
 
             {/* Net worth line */}
