@@ -117,7 +117,9 @@ function NetWorthTooltip({ active, payload, label, period }: CustomTooltipProps)
 
   const [year, month, day] = label.split("-");
   const dateLabel =
-    period === "1m" ? `${year}/${Number(month)}/${Number(day)}` : `${year}/${Number(month)}`;
+    period === "10d" || period === "1m"
+      ? `${year}/${Number(month)}/${Number(day)}`
+      : `${year}/${Number(month)}`;
 
   // All fields come from the data entry (single Bar with custom shape)
   const entry = payload[0]?.payload as
@@ -208,7 +210,7 @@ export function NetWorthChartClient({
   summaries,
   height = 350,
 }: NetWorthChartClientProps) {
-  const [period, setPeriod] = useState<Period>("6m");
+  const [period, setPeriod] = useState<Period>("10d");
 
   const filteredData = filterNetWorthByPeriod(history, period);
 
@@ -228,7 +230,7 @@ export function NetWorthChartClient({
     const [year, month, day] = dateStr.split("-");
     const m = Number(month);
     const d = Number(day);
-    if (period === "1m") return `${m}/${d}`;
+    if (period === "10d" || period === "1m") return `${m}/${d}`;
     if (period === "3m" || period === "6m") return `${m}月`;
     return `${year}/${m}`;
   };
