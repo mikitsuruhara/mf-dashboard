@@ -7,6 +7,11 @@ on:
     # JST 17:00 → UTC 8:00
     - cron: "0 8 * * *"
   workflow_dispatch:
+    inputs:
+      scrape_mode:
+        description: "Scrape mode (leave blank for auto, 'history' to backfill past 13 months)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -42,6 +47,7 @@ jobs:
       - run: mkdir -p /tmp/mf-debug
       - run: pnpm --filter @mf-dashboard/crawler start
         env:
+          SCRAPE_MODE: ${{ github.event.inputs.scrape_mode }}
           MF_EMAIL: ${{ secrets.MF_EMAIL }}
           MF_PASSWORD: ${{ secrets.MF_PASSWORD }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
