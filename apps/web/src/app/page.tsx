@@ -1,10 +1,10 @@
 import { hasInvestmentHoldings } from "@mf-dashboard/db";
 import type { Metadata } from "next";
 import { AssetBreakdownChart } from "../components/info/asset-breakdown-chart";
-import { AssetHistoryChart } from "../components/info/asset-history-chart";
 import { DailyChangeCard } from "../components/info/daily-change-card";
 import { MonthlyBalanceCard } from "../components/info/monthly-balance-card";
 import { MonthlyIncomeExpenseChart } from "../components/info/monthly-income-expense-chart";
+import { NetWorthChart } from "../components/info/net-worth-chart";
 import { PageLayout } from "../components/layout/page-layout";
 
 export const metadata: Metadata = {
@@ -23,7 +23,7 @@ export async function DashboardContent({ groupId }: { groupId?: string }) {
 
       {showDailyChange && <DailyChangeCard groupId={groupId} />}
 
-      <AssetHistoryChart groupId={groupId} />
+      <NetWorthChart groupId={groupId} />
 
       <MonthlyIncomeExpenseChart groupId={groupId} />
     </PageLayout>

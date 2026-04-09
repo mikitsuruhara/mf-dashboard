@@ -1,9 +1,9 @@
 import { hasInvestmentHoldings } from "@mf-dashboard/db";
 import { mfUrls } from "@mf-dashboard/meta/urls";
 import type { Metadata } from "next";
-import { AssetHistoryChart } from "../../components/info/asset-history-chart";
 import { BalanceSheetChart } from "../../components/info/balance-sheet-chart";
 import { HoldingsTable } from "../../components/info/holdings-table";
+import { NetWorthChart } from "../../components/info/net-worth-chart";
 import { UnrealizedGainCard } from "../../components/info/unrealized-gain-card";
 import { PageLayout } from "../../components/layout/page-layout";
 
@@ -17,7 +17,7 @@ export async function BSContent({ groupId }: { groupId?: string }) {
   return (
     <PageLayout title="資産" href={mfUrls.portfolio}>
       <BalanceSheetChart groupId={groupId} />
-      <AssetHistoryChart groupId={groupId} />
+      <NetWorthChart groupId={groupId} />
       {showUnrealizedGain && <UnrealizedGainCard groupId={groupId} />}
       <HoldingsTable type="asset" groupId={groupId} />
       <HoldingsTable type="liability" groupId={groupId} />

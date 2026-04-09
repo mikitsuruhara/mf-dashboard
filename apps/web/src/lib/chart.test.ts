@@ -3,7 +3,9 @@ import {
   roundToNice,
   getCutoffDate,
   filterDataByPeriod,
+  filterNetWorthByPeriod,
   CHART_PERIOD_OPTIONS,
+  NET_WORTH_PERIOD_OPTIONS,
   COMPARISON_PERIOD_OPTIONS,
 } from "./chart";
 
@@ -71,6 +73,13 @@ describe("getCutoffDate", () => {
     const cutoff = getCutoffDate("1y", now);
     expect(cutoff?.getFullYear()).toBe(2024);
     expect(cutoff?.getMonth()).toBe(4); // May
+  });
+
+  it("calculates 3 years ago", () => {
+    const cutoff = getCutoffDate("3y", now);
+    expect(cutoff?.getFullYear()).toBe(2022);
+    expect(cutoff?.getMonth()).toBe(4); // May
+    expect(cutoff?.getDate()).toBe(15);
   });
 });
 
@@ -142,6 +151,90 @@ describe("CHART_PERIOD_OPTIONS", () => {
   it("has Japanese labels", () => {
     expect(CHART_PERIOD_OPTIONS[0].label).toBe("1ヶ月");
     expect(CHART_PERIOD_OPTIONS[4].label).toBe("全期間");
+  });
+});
+
+describe("NET_WORTH_PERIOD_OPTIONS", () => {
+  it("includes 3y between 1y and all", () => {
+    expect(NET_WORTH_PERIOD_OPTIONS).toHaveLength(6);
+    expect(NET_WORTH_PERIOD_OPTIONS.map((o) => o.value)).toEqual([
+      "1m",
+      "3m",
+      "6m",
+      "1y",
+      "3y",
+      "all",
+    ]);
+  });
+
+  it("has Japanese label for 3y", () => {
+    const threey = NET_WORTH_PERIOD_OPTIONS.find((o) => o.value === "3y");
+    expect(threey?.label).toBe("3年");
+  });
+});
+
+describe("filterNetWorthByPeriod", () => {
+  const dailyData = Array.from({ length: 400 }, (_, i) => {
+    const date = new Date(2024, 0, 1);
+    date.setDate(date.getDate() + i);
+    return { date: date.toISOString().slice(0, 10), netWorth: i * 1000 };
+  });
+
+  const now = new Date(2025, 1, 5); // Feb 5 2025 (data ends ~Feb 3 2025)
+
+  it("1m returns all daily points within window", () => {
+    const result = filterNetWorthByPeriod(dailyData, "1m", now);
+    expect(result.length).toBeGreaterThan(0);
+    expect(result.every((d) => new Date(d.date) >= new Date(2025, 0, 5))).toBe(true);
+    // Multiple points per month — not deduplicated
+    const months = new Set(result.map((d) => d.date.slice(0, 7)));
+    expect(months.size).toBeLessThanOrEqual(2);
+  });
+
+  it("3m returns daily points", () => {
+    const result = filterNetWorthByPeriod(dailyData, "3m", now);
+    // Should contain more than one point per month (daily granularity)
+    const jan25 = result.filter((d) => d.date.startsWith("2025-01"));
+    expect(jan25.length).toBeGreaterThan(1);
+  });
+
+  it("6m returns daily points", () => {
+    const result = filterNetWorthByPeriod(dailyData, "6m", now);
+    const oct24 = result.filter((d) => d.date.startsWith("2024-10"));
+    expect(oct24.length).toBeGreaterThan(1);
+  });
+
+  it("1y returns weekly points (one per week)", () => {
+    const result = filterNetWorthByPeriod(dailyData, "1y", now);
+    // January 2025 should have ~4-5 weekly points, not 31 daily
+    const jan25 = result.filter((d) => d.date.startsWith("2025-01"));
+    expect(jan25.length).toBeGreaterThan(0);
+    expect(jan25.length).toBeLessThanOrEqual(5);
+  });
+
+  it("3y returns monthly points", () => {
+    const result = filterNetWorthByPeriod(dailyData, "3y", now);
+    const months = result.map((d) => d.date.slice(0, 7));
+    const uniqueMonths = new Set(months);
+    expect(months.length).toBe(uniqueMonths.size);
+  });
+
+  it("all returns monthly points", () => {
+    const result = filterNetWorthByPeriod(dailyData, "all", now);
+    const months = result.map((d) => d.date.slice(0, 7));
+    const uniqueMonths = new Set(months);
+    expect(months.length).toBe(uniqueMonths.size);
+  });
+
+  it("returns data in ascending date order", () => {
+    const result = filterNetWorthByPeriod(dailyData, "6m", now);
+    for (let i = 1; i < result.length; i++) {
+      expect(result[i].date >= result[i - 1].date).toBe(true);
+    }
+  });
+
+  it("handles empty data", () => {
+    expect(filterNetWorthByPeriod([], "1y", now)).toEqual([]);
   });
 });
 
